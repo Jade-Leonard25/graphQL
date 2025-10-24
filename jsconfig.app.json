@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  // ADD or CORRECT this block
+  "include": [
+      "src/**/*.js", 
+      "src/**/*.jsx" 
+      // If using TypeScript, also add:
+      // "src/**/*.ts", 
+      // "src/**/*.tsx" 
+  ] 
+}
