@@ -6,13 +6,15 @@ import { Input } from "../components/ui/input";
 import { useAuth } from '../context/AuthContext';
 import * as tabs from '../components/ui/tabs'
 import * as accordion from '../components/ui/accordion'
+const apiSignUp = import.meta.env.VITE_API_SIGNUP || null
+const apiSignIn = import.meta.env.VITE_API_SIGNIN || null
 const SignUpSchema = z.object({
     email: z.email("Invalid email"),
     password: z.string().min(8, "Password must be at least 8 characters"),
-    confirmPassword: z.string().min(1, "Please confirm your password"),
-}).refine((data) => data.password === data.confirmPassword, {
+    confirm_password: z.string().min(1, "Please confirm your password"),
+}).refine((data) => data.password === data.confirm_password, {
     message: "Passwords do not match",
-    path: ["confirmPassword"],
+    path: ["confirm_password"],
 });
 
 const SignInSchema = z.object({
@@ -20,29 +22,26 @@ const SignInSchema = z.object({
     password: z.string().min(1, "Password is required"),
 });
 
-// Mock API Call (Simulation)
-// A unified mock function to simulate server response
-const mockAuthApi = async (path, data) => {
-    return new Promise((resolve, reject) => {
-        setTimeout(() => {
-            if (path === 'signup') {
-                if (data.email === "test@example.com") {
-                    return reject({ message: "Email already taken." });
-                }
-                resolve({ success: true, message: "Sign-up successful! JWT granted." });
-            } else if (path === 'signin') {
-                if (data.email === "user@example.com" && data.password === "password123") {
-                    resolve({ success: true, message: "Sign-in successful! JWT granted." });
-                }
-                reject({ message: "Invalid email or password." });
-            }
-        }, 1000);
+const authApi = async (url, data) => {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
     });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred' }));
+        throw new Error(errorData.message || 'Something went wrong');
+    }
+
+    return response.json();
 };
 
 const Authentication = () => {
     // Separate state for Sign Up and Sign In data
-    const [signUpData, setSignUpData] = useState({ email: "", password: "", confirmPassword: "" });
+    const [signUpData, setSignUpData] = useState({ email: "", password: "", confirm_password: "" });
     const [signInData, setSignInData] = useState({ email: "", password: "" });
 
     // Unified state for errors and loading
@@ -70,25 +69,31 @@ const Authentication = () => {
 
         try {
             let parsedData;
-            let apiPath;
+            let apiUrl;
             let dataToSend;
 
             if (formType === 'signup') {
                 parsedData = SignUpSchema.parse(signUpData);
-                apiPath = 'signup';
-                dataToSend = { email: parsedData.email, password: parsedData.password };
+                apiUrl = apiSignUp;
+                dataToSend = { email: parsedData.email, password: parsedData.password, confirm_password: parsedData.confirm_password };
             } else {
                 parsedData = SignInSchema.parse(signInData);
-                apiPath = 'signin';
+                apiUrl = apiSignIn;
                 dataToSend = parsedData;
             }
 
+            if (!apiUrl) {
+                setErrors({ server: `The API URL for ${formType} is not configured.` });
+                setIsLoading(false);
+                return;
+            }
+
             // API Call
-            const result = await mockAuthApi(apiPath, dataToSend);
-            console.log(`${formType} successful:`, result.message);
+            const result = await authApi(apiUrl, dataToSend);
+            console.log(`${formType} successful:`, result);
 
             // On success, create a minimal user object and persist via context
-            const userObj = { email: dataToSend.email, authenticatedAt: Date.now(), method: apiPath };
+            const userObj = { email: dataToSend.email, token: result.token, authenticatedAt: Date.now(), method: formType };
             try {
                 login(userObj);
                 // Redirect to dashboard after successful login
@@ -96,18 +101,12 @@ const Authentication = () => {
             } catch (e) {
                 console.warn('Login call failed', e);
             }
-            // TODO: Store token, redirect user
 
         } catch (err) {
             // Zod validation errors
             if (err instanceof z.ZodError) {
                 const fieldErrors = {};
-                // zod exposes validation details in .errors (array) or .issues depending on version/shape
-                const validationArray = Array.isArray(err.errors)
-                    ? err.errors
-                    : Array.isArray(err.issues)
-                        ? err.issues
-                        : [];
+                const validationArray = Array.isArray(err.errors) ? err.errors : Array.isArray(err.issues) ? err.issues : [];
 
                 if (validationArray.length) {
                     validationArray.forEach((e) => {
@@ -115,13 +114,12 @@ const Authentication = () => {
                         fieldErrors[path] = e.message;
                     });
                 } else {
-                    // Fallback message if shape is unexpected
                     fieldErrors.form = 'Validation failed';
                 }
 
                 setErrors(fieldErrors);
             }
-            // Mock API / Server errors
+            // API / Server errors
             else if (err && err.message) {
                 setErrors({ server: err.message });
             }
@@ -201,15 +199,15 @@ const Authentication = () => {
                             <div>
                                 <label className="block text-sm mb-1">Confirm Password</label>
                                 <Input
-                                    name="confirmPassword"
+                                    name="confirm_password"
                                     type="password"
-                                    value={signUpData.confirmPassword}
+                                    value={signUpData.confirm_password}
                                     onChange={(e) => handleInput(e, 'signup')}
                                     placeholder="Repeat your password"
                                     className="w-full"
                                     disabled={isLoading}
                                 />
-                                {errors.confirmPassword && <p className="text-sm text-red-500 mt-1">{errors.confirmPassword}</p>}
+                                {errors.confirm_password && <p className="text-sm text-red-500 mt-1">{errors.confirm_password}</p>}
                             </div>
 
                             <Button type="submit" disabled={isLoading}>
